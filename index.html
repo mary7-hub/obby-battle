@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Обби Батл: Мари против Ксеяо</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>👑 ОББИ БАТЛ: МАРИ 🐼 ПРОТИВ КСЕЯО 🐱</h1>
+    <div class="info-panel">
+        <div>⏳ Время: <span id="timer">0.00</span> сек</div>
+        <div>💀 Смерти Мари: <span id="my-deaths">0</span></div>
+        <div>💀 Смерти Ксеяо: <span id="friend-deaths">0</span></div>
+    </div>
+    <div id="gameWindow">
+        <div class="platform" style="left: 10px; bottom: 40px; width: 120px; height: 15px;"></div>
+        <div class="platform" style="left: 310px; bottom: 140px; width: 100px; height: 15px;"></div>
+        <div id="movePlat1" class="platform moving-platform" style="left: 170px; bottom: 90px; width: 100px; height: 15px;"></div>
+        <div id="movePlat2" class="platform moving-platform" style="left: 150px; bottom: 190px; width: 90px; height: 15px;"></div>
+        <div class="platform" style="left: 40px; bottom: 230px; width: 100px; height: 15px;"></div>
+        <div class="finish-line" style="left: 30px; bottom: 280px; width: 120px; height: 20px;">🏁 ФИНИШ</div>
+        <div class="lava"></div>
+    </div>
+    <div class="controls">
+        <button class="btn" onclick="moveLeft()">◀️</button>
+        <button class="btn" onclick="jump()">🔼 ПРЫГ</button>
+        <button class="btn" onclick="moveRight()">▶️</button>
+    </div>
+    <script>
+        const SERVER_URL = 'ws://localhost:8080'; 
+        let socket = new WebSocket(SERVER_URL);
+        const IMG_PANDA = "https://icons8.com";
+        const IMG_CAT = "https://icons8.com";
+        const IMG_THUNDER = "https://icons8.com";
+        
+        const MY_NAME = 'Мари'; 
+        const MY_IMG = IMG_PANDA; 
+        const MY_ID = 'kalach_girl'; 
+
+        const gameWindow = document.getElementById('gameWindow');
+        let remotePlayers = {}, playerX = 30, playerY = 60, velocityY = 0;
+        let isGrounded = false, jumpCount = 0, myDeathCount = 0;
+        const gravity = 0.45, jumpForce = 10, speed = 14;
+        let plat1X = 170, plat1Dir = 1, plat2X = 150, plat2Dir = -1;
+
+        let isBonusLevel = false, myThunderX = -50, myThunderSpeed = 1.8;
+        const myThunderEl = document.createElement('div');
+        myThunderEl.className = 'player'; myThunderEl.style.display = 'none';
+        myThunderEl.innerHTML = `<div class="nickname" style="color:#ffcc00; border:1px solid #ffcc00;">🐺 ГРОМ ${MY_NAME.toUpperCase()}</div><img src="${IMG_THUNDER}">`;
+        gameWindow.appendChild(myThunderEl);
+
+        const myElement = document.createElement('div');
+        myElement.className = 'player'; myElement.id = 'me';
+        myElement.innerHTML = `<div class="nickname">${MY_NAME}</div><img src="${MY_IMG}">`;
+        gameWindow.appendChild(myElement);
+
+        let startTime = Date.now();
+        setInterval(() => { document.getElementById('timer').innerText = ((Date.now() - startTime) / 1000).toFixed(2); }, 50);
+
+        socket.onopen = () => { socket.send(JSON.stringify({ type: 'join', id: MY_ID, name: MY_NAME, x: playerX, y: playerY, img: MY_IMG })); };
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'init') { data.players.forEach(p => { if (p.id !== MY_ID) spawnRemotePlayer(p); }); }
+            if (data.type === 'newPlayer') spawnRemotePlayer(data);
+            if (data.type === 'update' && remotePlayers[data.id]) { remotePlayers[data.id].style.left = data.x + 'px'; remotePlayers[data.id].style.bottom = data.y + 'px'; }
+            if (data.type === 'updateDeaths') { document.getElementById('friend-deaths').innerText = data.deaths; }
+            if (data.type === 'remove' && remotePlayers[data.id]) { remotePlayers[data.id].remove(); delete remotePlayers[data.id]; }
+        };
+
+        function spawnRemotePlayer(p) {
+            const el = document.createElement('div'); el.className = 'player remote-player';
+            el.innerHTML = `<div class="nickname">${p.name}</div><img src="${p.img}">`;
+            el.style.left = p.x + 'px'; el.style.bottom = p.y + 'px'; gameWindow.appendChild(el); remotePlayers[p.id] = el;
+            document.getElementById('friend-deaths').innerText = p.deaths || 0;
+        }
+        function sendPosition() { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'move', id: MY_ID, x: playerX, y: playerY })); }
+        
+        function bonus() {
+            isBonusLevel = true; document.querySelector('h1').innerText = "🚨 БОНУС: ПОБЕГ ОТ ГРОМА! 🚨";
+            gameWindow.style.borderColor = "#ff3300"; gameWindow.style.background = "#1f0505";
+            myThunderEl.style.display = 'flex'; const f = document.querySelector('.finish-line');
+            f.style.left = "420px"; f.style.bottom = "40px"; f.innerText = "🏠 ШТАБ"; startTime = Date.now();
+        }
+
+        function physicsTick() {
+            if (!isBonusLevel) {
+                const p1 = document.getElementById('movePlat1'); plat1X += 2 * plat1Dir; if (plat1X > 280 || plat1X < 120) plat1Dir *= -1; p1.style.left = plat1X + 'px';
+                const p2 = document.getElementById('movePlat2'); plat2X += 1.5 * plat2Dir; if (plat2X > 260 || plat2X < 60) plat2Dir *= -1; p2.style.left = plat2X + 'px';
+            } else {
+                if (myThunderX < gameWindow.clientWidth) { myThunderSpeed += 0.002; myThunderX += myThunderSpeed; myThunderEl.style.left = myThunderX + 'px'; myThunderEl.style.bottom = '40px'; }
+                if (Math.abs(playerX - myThunderX) < 30 && playerY <= 85) { alert("🐺 Твой Гром тебя поймал!"); playerX = 30; playerY = 60; velocityY = 0; myThunderX = -50; myThunderSpeed = 1.8; }
+            }
+            if (!isGrounded) { velocityY -= gravity; playerY += velocityY; } isGrounded = false;
+            document.querySelectorAll('.platform, .finish-line').forEach(plat => {
+                let pL = parseInt(plat.style.left), pB = parseInt(plat.style.bottom), pW = parseInt(plat.style.width), pH = parseInt(plat.style.height);
+                if (playerX + 35 >= pL && playerX <= pL + pW && playerY <= pB + pH && playerY + velocityY >= pB) {
+                    if (velocityY <= 0) {
+                        playerY = pB + pH; velocityY = 0; isGrounded = true; jumpCount = 0;
+                        if (!isBonusLevel) { if (plat.id === 'movePlat1') playerX += 2 * plat1Dir; if (plat.id === 'movePlat2') playerX += 1.5 * plat2Dir; }
+                        if (plat.classList.contains('finish-line')) { if (!isBonusLevel) { bonus(); playerX = 30; playerY = 60; } else { alert("🏆 ПОБЕДА!"); location.reload(); } }
+                    }
+                }
+            });
+            if (playerY <= 15) {
+                myDeathCount++; document.getElementById('my-deaths').innerText = myDeathCount;
+                if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'death', id: MY_ID, deaths: myDeathCount }));
+                if (isBonusLevel) { myThunderX = -50; myThunderSpeed = 1.8; } playerX = 30; playerY = 60; velocityY = 0;
+            }
+            myElement.style.left = playerX + 'px'; myElement.style.bottom = playerY + 'px';
+            if (!isGrounded || velocityY !== 0) sendPosition();
+        }
+        setInterval(physicsTick, 1000 / 60);
+        function moveLeft() { if (playerX > 0) playerX -= speed; sendPosition(); }
+        function moveRight() { if (playerX < gameWindow.clientWidth - 45) playerX += speed; sendPosition(); }
+        function jump() { if (isGrounded || jumpCount < 2) { velocityY = jumpForce; isGrounded = false; jumpCount++; sendPosition(); } }
+        window.addEventListener('keydown', e => { if (e.key === 'ArrowLeft' || e.key === 'a') moveLeft(); if (e.key === 'ArrowRight' || e.key === 'd') moveRight(); if (e.key === ' ' || e.key === 'w' || e.key === 'ArrowUp') jump(); });
+    </script>
+</body>
+</html>
+
